@@ -1,0 +1,11 @@
+discord.py
+aiohttp
+aiofiles
+unidecode
+numpy
+scikit-learn
+plotly
+pandas
+dropbox
+openai
+kaleido

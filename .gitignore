@@ -1,0 +1,5 @@
+.env
+token.txt
+exports/
+__pycache__/
+venv/
