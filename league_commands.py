@@ -1308,26 +1308,51 @@ def top(embed, commandInfo):
         sortBy = commandInfo['text'][1]
 
     pos = ""
-
     if len(commandInfo['text']) > 1:
         if commandInfo['text'][1].upper() in ['PG','G','GF','SG','SF','PF','F','FC','C']:
             pos = commandInfo['text'][1].upper()
         elif len(commandInfo['text']) > 2 and commandInfo['text'][2].upper() in ['PG','G','GF','SG','SF','PF','F','FC','C']:
             pos = commandInfo['text'][2].upper()
+
     activePlayers = []
     for p in players:
         if p['tid'] > -2:
             if pos in p['ratings'][-1]['pos']:
                 playerInfo = pull_info.pinfo(p)
                 activePlayers.append(playerInfo)
+
     if 'bottom' in commandInfo['message'].content.split(" ")[0]:
         totalPages, remainder = divmod(len(activePlayers), 14)
         totalPages += 1
         commandInfo['pageNumber'] = totalPages + 1 - commandInfo['pageNumber']
-    commandContent = basics.player_list_embed(activePlayers, commandInfo['pageNumber'], export['gameAttributes']['season'], sortBy)
-    
-    embed.add_field(name=f"Sorted by {commandContent[1]}", value=commandContent[0])
+
+    commandContent = basics.player_list_embed(
+        activePlayers,
+        commandInfo['pageNumber'],
+        export['gameAttributes']['season'],
+        sortBy
+    )
+
+    field_value = commandContent[0]
+    # Split in Blöcke von max 1024 Zeichen (Discord Limit)
+    chunks = [field_value[i:i+1024] for i in range(0, len(field_value), 1024)]
+
+    for idx, chunk in enumerate(chunks):
+        if idx == 0:
+            embed.add_field(
+                name=f"Sorted by {commandContent[1]}",
+                value=chunk,
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name=f"Continued ({idx+1})",
+                value=chunk,
+                inline=False
+            )
+
     return embed
+    
 
 def injuries(embed, commandInfo):
     export = shared_info.serverExports[str(commandInfo['serverId'])]
