@@ -215,11 +215,11 @@ async def load_export_content(text, message):
 
         shared_info.serverExports[str(message.guild.id)] = await load_json_or_gzip(path)
 
-        # ✅ zusätzlich in Datenbank speichern
-storage.save_export(
-    str(message.guild.id),
-    shared_info.serverExports[str(message.guild.id)]
-)
+        # ✅ Export zusätzlich speichern
+        storage.save_export(
+            str(message.guild.id),
+            shared_info.serverExports[str(message.guild.id)]
+        )
 
         players = shared_info.serverExports[str(message.guild.id)]["players"]
         for p in players:
