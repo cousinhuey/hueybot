@@ -13,6 +13,7 @@ import discord
 import copy
 import shared_info
 import shutil
+import storage 
 
 bot = shared_info.bot
 
@@ -213,6 +214,12 @@ async def load_export_content(text, message):
                         await f.write(chunk)
 
         shared_info.serverExports[str(message.guild.id)] = await load_json_or_gzip(path)
+
+        # ✅ zusätzlich in Datenbank speichern
+storage.save_export(
+    str(message.guild.id),
+    shared_info.serverExports[str(message.guild.id)]
+)
 
         players = shared_info.serverExports[str(message.guild.id)]["players"]
         for p in players:
