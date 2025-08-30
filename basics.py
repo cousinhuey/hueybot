@@ -149,27 +149,59 @@ def clean_priorities(db):
     return db
 
 
+import os
+import json
+import gzip
+import aiofiles
+import aiohttp
+import asyncio
+import shutil
+import shared_info
+import storage  # falls du dein Storage-Modul hast
+
+# Basis-Verzeichnis für Railway Volume
+VOLUME_PATH = "/mnt/data"
+EXPORTS_PATH = os.path.join(VOLUME_PATH, "exports")
+os.makedirs(EXPORTS_PATH, exist_ok=True)
+
+
+# ----------------------------------------------------------------------
+# DB Funktionen
+# ----------------------------------------------------------------------
 async def save_db_content(db, name="servers.json"):
     if name == "servers.json":
         db = clean_priorities(db)
-    async with aiofiles.open(name, "w") as f:
+        path = os.path.join(VOLUME_PATH, name)
+    else:
+        path = os.path.join(VOLUME_PATH, name)
+
+    async with aiofiles.open(path, "w") as f:
         await f.write(json.dumps(db))
 
 
 async def save_db(db, name="servers.json"):
     if name == "servers.json":
-        shutil.copy("servers.json", "serversb.json")
+        src = os.path.join(VOLUME_PATH, "servers.json")
+        dst = os.path.join(VOLUME_PATH, "serversb.json")
+        if os.path.exists(src):
+            shutil.copy(src, dst)
     await asyncio.create_task(save_db_content(db, name))
 
 
 def load_db(name="servers.json"):
-    with open(name) as f:
+    path = os.path.join(VOLUME_PATH, name)
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
         db = json.load(f)
     return db
 
 
+# ----------------------------------------------------------------------
+# Export Funktionen
+# ----------------------------------------------------------------------
 def get_export(guild_id):
-    path = os.path.join("exports", f"{guild_id}-export.json")
+    path = os.path.join(EXPORTS_PATH, f"{guild_id}-export.json")
     if not os.path.exists(path):
         return {"settings": {}}  
 
@@ -187,7 +219,6 @@ def get_export(guild_id):
     return data
 
 
-
 # ----------------------------------------------------------------------
 # Export Loader
 # ----------------------------------------------------------------------
@@ -203,9 +234,9 @@ async def load_export_content(text, message):
 
     await message.channel.send("Loading export...")
     try:
+        path = os.path.join(EXPORTS_PATH, f"{message.guild.id}-export.json")
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
-                path = f"exports/{message.guild.id}-export.json"
                 async with aiofiles.open(path, "wb") as f:
                     while True:
                         chunk = await response.content.read(1024)
@@ -239,6 +270,7 @@ async def load_export(text, message):
     print("loading")
     loop = asyncio.get_event_loop()
     await loop.create_task(load_export_content(text, message))
+
 
 # ----------------------------------------------------------------------
 # Utility Functions
