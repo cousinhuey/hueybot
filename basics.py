@@ -149,16 +149,6 @@ def clean_priorities(db):
     return db
 
 
-import os
-import json
-import gzip
-import aiofiles
-import aiohttp
-import asyncio
-import shutil
-import shared_info
-import storage  # falls du dein Storage-Modul hast
-
 # Basis-Verzeichnis für Railway Volume
 VOLUME_PATH = "/mnt/data"
 EXPORTS_PATH = os.path.join(VOLUME_PATH, "exports")
@@ -171,39 +161,32 @@ os.makedirs(EXPORTS_PATH, exist_ok=True)
 async def save_db_content(db, name="servers.json"):
     if name == "servers.json":
         db = clean_priorities(db)
-        path = os.path.join(VOLUME_PATH, name)
-    else:
-        path = os.path.join(VOLUME_PATH, name)
-
-    async with aiofiles.open(path, "w") as f:
+    async with aiofiles.open(os.path.join(VOLUME_PATH, name), "w") as f:
         await f.write(json.dumps(db))
 
 
 async def save_db(db, name="servers.json"):
     if name == "servers.json":
-        src = os.path.join(VOLUME_PATH, "servers.json")
-        dst = os.path.join(VOLUME_PATH, "serversb.json")
-        if os.path.exists(src):
-            shutil.copy(src, dst)
+        shutil.copy(
+            os.path.join(VOLUME_PATH, "servers.json"),
+            os.path.join(VOLUME_PATH, "serversb.json")
+        )
     await asyncio.create_task(save_db_content(db, name))
 
 
 def load_db(name="servers.json"):
-    path = os.path.join(VOLUME_PATH, name)
-    if not os.path.exists(path):
-        return {}
-    with open(path) as f:
+    with open(os.path.join(VOLUME_PATH, name)) as f:
         db = json.load(f)
     return db
 
 
 # ----------------------------------------------------------------------
-# Export Funktionen
+# Exports
 # ----------------------------------------------------------------------
 def get_export(guild_id):
     path = os.path.join(EXPORTS_PATH, f"{guild_id}-export.json")
     if not os.path.exists(path):
-        return {"settings": {}}  
+        return {"settings": {}}
 
     with open(path, "rb") as f:
         raw_data = f.read()
@@ -217,6 +200,15 @@ def get_export(guild_id):
     if "settings" not in data:
         data["settings"] = {}
     return data
+
+
+async def load_json_or_gzip(path):
+    async with aiofiles.open(path, "rb") as f:
+        raw_data = await f.read()
+    if raw_data[:2] == b"\x1f\x8b":
+        decompressed_data = gzip.decompress(raw_data)
+        return json.loads(decompressed_data.decode("utf-8"))
+    return json.loads(raw_data.decode("utf-8"))
 
 
 # ----------------------------------------------------------------------
@@ -234,9 +226,9 @@ async def load_export_content(text, message):
 
     await message.channel.send("Loading export...")
     try:
-        path = os.path.join(EXPORTS_PATH, f"{message.guild.id}-export.json")
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
+                path = os.path.join(EXPORTS_PATH, f"{message.guild.id}-export.json")
                 async with aiofiles.open(path, "wb") as f:
                     while True:
                         chunk = await response.content.read(1024)
@@ -246,13 +238,13 @@ async def load_export_content(text, message):
 
         shared_info.serverExports[str(message.guild.id)] = await load_json_or_gzip(path)
 
-        # ✅ Export zusätzlich speichern
+        # ✅ Export zusätzlich im persistenten Storage speichern
         storage.save_export(
             str(message.guild.id),
             shared_info.serverExports[str(message.guild.id)]
         )
 
-        players = shared_info.serverExports[str(message.guild.id)]["players"]
+        players = shared_info.serverExports[str(message.guild.id)].get("players", [])
         for p in players:
             p["stats"].sort(key=lambda s: s["season"])
             p["ratings"].sort(key=lambda r: r["season"])
