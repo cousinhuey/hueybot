@@ -58,20 +58,24 @@ def upload_to_dropbox(path_to_file, dest_path):
     except dropbox.exceptions.ApiError:
         pass
 
+    # Datei hochladen
     with open(path_to_file, "rb") as f:
         dbx.files_upload(f.read(), dest_path)
 
-    # Sharing-Link erstellen
+    # Sharing-Link erstellen (robust)
+    url = None
     try:
         link_meta = dbx.sharing_create_shared_link_with_settings(dest_path)
         url = link_meta.url
     except dropbox.exceptions.ApiError as e:
-        if (
-            isinstance(e.error, dropbox.sharing.CreateSharedLinkWithSettingsError)
-            and e.error.is_shared_link_already_exists()
-        ):
+        # Prüfen, ob Link schon existiert (falls in seltenen Fällen)
+        try:
             links = dbx.sharing_list_shared_links(path=dest_path).links
-            url = links[0].url if links else None
+            if links:
+                url = links[0].url
+        except Exception:
+            pass
+
     return url
 
 # ----------------------------------------------------------------------
