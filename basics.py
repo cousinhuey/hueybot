@@ -103,6 +103,9 @@ def upload_to_dropbox(path_to_file, dest_path):
     return url
 
 
+# ----------------------------------------------------------------------
+# Export hochladen
+# ----------------------------------------------------------------------
 async def update_export_content(message):
     """Export hochladen und Link im Discord-Channel posten"""
     await message.channel.send("Uploading your export to Dropbox...")
@@ -111,7 +114,10 @@ async def update_export_content(message):
 
     if not os.path.exists(path_to_file):
         await message.channel.send("⚠️ No export file found for this server.")
+        print(f"❌ Kein Export gefunden unter: {path_to_file}")
         return
+
+    print(f"📂 Lade Export hoch von: {path_to_file}")
 
     loop = asyncio.get_event_loop()
     url = await loop.run_in_executor(
@@ -125,13 +131,14 @@ async def update_export_content(message):
     await message.channel.send(text)
 
 
-
 async def update_export(text, message):
     """Command für -update oder -updateexport"""
     if message.content.startswith("-updateexport"):
-        await message.channel.send("⚠️ WARNING: The call '-updateexport' is deprecated. Use '-update' instead.")
+        await message.channel.send(
+            "⚠️ WARNING: The call '-updateexport' is deprecated. Use '-update' instead."
+        )
     if message.content.startswith("-update") or message.content.startswith("-updateexport"):
-        print("updating export")
+        print("🔄 updating export")
         asyncio.create_task(update_export_content(message))
 
 
@@ -154,12 +161,8 @@ async def load_json_or_gzip(file_path):
 
 def clean_priorities(db):
     for n, s in db.items():
-        offers = s["offers"]
-        offers = sorted(offers, key=lambda o: o["priority"])
-        teams = []
-        for o in offers:
-            teams.append(o["team"])
-        teams = list(set(teams))
+        offers = sorted(s["offers"], key=lambda o: o["priority"])
+        teams = list({o["team"] for o in offers})
         for t in teams:
             pri = 1
             for o in offers:
@@ -169,29 +172,37 @@ def clean_priorities(db):
     return db
 
 
-
-
 # ----------------------------------------------------------------------
 # DB Funktionen
 # ----------------------------------------------------------------------
 async def save_db_content(db, name="servers.json"):
     if name == "servers.json":
         db = clean_priorities(db)
-    async with aiofiles.open(os.path.join(VOLUME_PATH, name), "w") as f:
+
+    file_path = os.path.join(VOLUME_PATH, name)
+    print(f"💾 Speichere Datei in Railway: {file_path}")
+
+    async with aiofiles.open(file_path, "w") as f:
         await f.write(json.dumps(db))
 
 
 async def save_db(db, name="servers.json"):
     if name == "servers.json":
+        backup_path = os.path.join(VOLUME_PATH, "serversb.json")
         shutil.copy(
             os.path.join(VOLUME_PATH, "servers.json"),
-            os.path.join(VOLUME_PATH, "serversb.json")
+            backup_path
         )
+        print(f"🗂️ Backup erstellt: {backup_path}")
+
     await asyncio.create_task(save_db_content(db, name))
 
 
 def load_db(name="servers.json"):
-    with open(os.path.join(VOLUME_PATH, name)) as f:
+    file_path = os.path.join(VOLUME_PATH, name)
+    print(f"📥 Lade DB aus Railway: {file_path}")
+
+    with open(file_path) as f:
         db = json.load(f)
     return db
 
@@ -212,19 +223,9 @@ def get_export(guild_id):
     else:
         data = json.loads(raw_data.decode("utf-8"))
 
-    # immer settings sicherstellen
     if "settings" not in data:
         data["settings"] = {}
     return data
-
-
-async def load_json_or_gzip(path):
-    async with aiofiles.open(path, "rb") as f:
-        raw_data = await f.read()
-    if raw_data[:2] == b"\x1f\x8b":
-        decompressed_data = gzip.decompress(raw_data)
-        return json.loads(decompressed_data.decode("utf-8"))
-    return json.loads(raw_data.decode("utf-8"))
 
 
 # ----------------------------------------------------------------------
@@ -242,9 +243,10 @@ async def load_export_content(text, message):
 
     await message.channel.send("Loading export...")
     try:
+        path = os.path.join(EXPORTS_PATH, f"{message.guild.id}-export.json")
+
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
-                path = os.path.join(EXPORTS_PATH, f"{message.guild.id}-export.json")
                 async with aiofiles.open(path, "wb") as f:
                     while True:
                         chunk = await response.content.read(1024)
@@ -254,7 +256,7 @@ async def load_export_content(text, message):
 
         shared_info.serverExports[str(message.guild.id)] = await load_json_or_gzip(path)
 
-        # ✅ Export zusätzlich im persistenten Storage speichern
+        # ✅ Export zusätzlich im persistenten Storage sichern
         storage.save_export(
             str(message.guild.id),
             shared_info.serverExports[str(message.guild.id)]
@@ -268,16 +270,15 @@ async def load_export_content(text, message):
         await message.channel.send("Export loaded successfully!")
 
     except Exception as e:
-        print(f"Error loading export: {e}")
+        print(f"❌ Error loading export: {e}")
         await message.channel.send(
             "There was an error loading that file. Ensure it's a valid JSON or gzipped JSON, or try another link."
         )
 
 
 async def load_export(text, message):
-    print("loading")
-    loop = asyncio.get_event_loop()
-    await loop.create_task(load_export_content(text, message))
+    print("📥 loading export")
+    await asyncio.create_task(load_export_content(text, message))
 
 
 # ----------------------------------------------------------------------
