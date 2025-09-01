@@ -22,6 +22,12 @@ VOLUME_PATH = "/mnt/data"
 EXPORTS_PATH = os.path.join(VOLUME_PATH, "exports")
 os.makedirs(EXPORTS_PATH, exist_ok=True)
 
+# Sicherstellen, dass die DB-Datei existiert
+servers_json_path = os.path.join(VOLUME_PATH, "servers.json")
+if not os.path.exists(servers_json_path):
+    with open(servers_json_path, "w") as f:
+        f.write("{}")  # leeres JSON initialisieren
+
 # ----------------------------------------------------------------------
 # Dropbox OAuth Konfiguration
 # ----------------------------------------------------------------------
@@ -140,9 +146,14 @@ async def save_db_content(db, name="servers.json"):
         await f.write(json.dumps(db))
 
 async def save_db(db, name="servers.json"):
-    if name == "servers.json":
-        backup_path = os.path.join(VOLUME_PATH, "serversb.json")
-        shutil.copy(os.path.join(VOLUME_PATH, "servers.json"), backup_path)
+    file_path = os.path.join(VOLUME_PATH, name)
+    backup_path = os.path.join(VOLUME_PATH, "serversb.json")
+
+    # Backup nur erstellen, wenn Original existiert
+    if os.path.exists(file_path):
+        shutil.copy(file_path, backup_path)
+        print(f"🗂️ Backup erstellt: {backup_path}")
+
     await asyncio.create_task(save_db_content(db, name))
 
 def load_db(name="servers.json"):
