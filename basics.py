@@ -188,14 +188,17 @@ async def load_export_content(text, message):
     if len(text) == 1:
         await message.channel.send("Please provide an export URL.")
         return
+
     url = text[1]
     if not url.startswith("http"):
         await message.channel.send("Invalid link.")
         return
+
     await message.channel.send("Loading export...")
 
     try:
         path = os.path.join(EXPORTS_PATH, f"{message.guild.id}-export.json")
+
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 async with aiofiles.open(path, "wb") as f:
@@ -205,26 +208,29 @@ async def load_export_content(text, message):
                             break
                         await f.write(chunk)
 
+        # Export in shared_info laden
         shared_info.serverExports[str(message.guild.id)] = await load_json_or_gzip(path)
 
-        # Export zusätzlich persistent speichern
-        storage.save_export(
+        # ✅ Export zusätzlich persistent speichern (async)
+        await storage.save_export(
             str(message.guild.id),
             shared_info.serverExports[str(message.guild.id)]
         )
 
+        # Spieler-Daten sortieren
         players = shared_info.serverExports[str(message.guild.id)].get("players", [])
         for p in players:
             p["stats"].sort(key=lambda s: s["season"])
             p["ratings"].sort(key=lambda r: r["season"])
 
         await message.channel.send("Export loaded successfully!")
+
     except Exception as e:
         print(f"❌ Error loading export: {e}")
         await message.channel.send(
             "There was an error loading that file. Ensure it's a valid JSON or gzipped JSON, or try another link."
         )
-
+        
 async def load_export(text, message):
     await asyncio.create_task(load_export_content(text, message))
 
