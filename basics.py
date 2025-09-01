@@ -17,10 +17,13 @@ import storage
 
 bot = shared_info.bot
 
-# Basis-Verzeichnis für Railway Volume
+
 VOLUME_PATH = "/mnt/data"
 EXPORTS_PATH = os.path.join(VOLUME_PATH, "exports")
+
+os.makedirs(VOLUME_PATH, exist_ok=True)
 os.makedirs(EXPORTS_PATH, exist_ok=True)
+
 
 # 🔑 App-Credentials (von Dropbox Dev Console)
 CLIENT_ID = "bwmbvhvhg74009d"
