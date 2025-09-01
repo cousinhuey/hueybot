@@ -17,6 +17,11 @@ import storage
 
 bot = shared_info.bot
 
+# Basis-Verzeichnis für Railway Volume
+VOLUME_PATH = "/mnt/data"
+EXPORTS_PATH = os.path.join(VOLUME_PATH, "exports")
+os.makedirs(EXPORTS_PATH, exist_ok=True)
+
 # 🔑 App-Credentials (von Dropbox Dev Console)
 CLIENT_ID = "bwmbvhvhg74009d"
 CLIENT_SECRET = "gfpqqt6ncmm73e1"
@@ -98,12 +103,24 @@ def upload_to_dropbox(path_to_file, dest_path):
 async def update_export_content(message):
     """Export hochladen und Link im Discord-Channel posten"""
     await message.channel.send("Uploading your export to Dropbox...")
-    current_dir = os.getcwd()
-    path_to_file = os.path.join(current_dir, "exports", f"{message.guild.id}-export.json")
+
+    path_to_file = os.path.join(EXPORTS_PATH, f"{message.guild.id}-export.json")
+
+    if not os.path.exists(path_to_file):
+        await message.channel.send("⚠️ No export file found for this server.")
+        return
+
     loop = asyncio.get_event_loop()
-    url = await loop.run_in_executor(None, upload_to_dropbox, path_to_file, f"/exports/{message.guild.id}-export.json")
+    url = await loop.run_in_executor(
+        None,
+        upload_to_dropbox,
+        path_to_file,
+        f"/exports/{message.guild.id}-export.json"
+    )
+
     text = "**Your Dropbox link:** " + url.replace("www.", "dl.")
     await message.channel.send(text)
+
 
 
 async def update_export(text, message):
@@ -149,10 +166,6 @@ def clean_priorities(db):
     return db
 
 
-# Basis-Verzeichnis für Railway Volume
-VOLUME_PATH = "/mnt/data"
-EXPORTS_PATH = os.path.join(VOLUME_PATH, "exports")
-os.makedirs(EXPORTS_PATH, exist_ok=True)
 
 
 # ----------------------------------------------------------------------
