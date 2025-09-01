@@ -17,6 +17,9 @@ import commandmaster
 from unidecode import unidecode
 import gzip  # 🔧 added for gzip exports
 from dotenv import load_dotenv
+from basics import load_all_exports, refresh_all_dropbox_links, periodic_dropbox_refresh
+
+bot = shared_info.bot
 
 
 points = shared_info.points
@@ -241,16 +244,28 @@ async def on_message(message):
                         points.update({str(message.author.id): p+5})
 
 
-# Read Discord token
+@bot.event
+async def on_ready():
+    print(f"{bot.user} is online and all exports loading...")
+
+    # Async Version von load_all_exports, falls sie IO macht
+    await load_all_exports_async()
+
+    print("All exports loaded!")
+
+    # Hintergrundtasks starten
+    asyncio.create_task(refresh_all_dropbox_links())
+    asyncio.create_task(periodic_dropbox_refresh())
+
+# Token aus Environment oder Datei laden
 discord_token = os.getenv('DISCORD_TOKEN')
 if not discord_token:
     try:
-        f = open("token.txt","r")
-        for line in f:
-            discord_token = line.replace("\n","")
-        f.close()
+        with open("token.txt","r") as f:
+            discord_token = f.read().strip()
     except FileNotFoundError:
         print("ERROR: No Discord token found. Please set DISCORD_TOKEN environment variable or create token.txt file.")
         exit(1)
 
-client.run(discord_token)
+# Bot starten – NICHT client.run, sondern bot.run
+bot.run(discord_token)
