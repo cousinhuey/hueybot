@@ -128,12 +128,13 @@ def get_export(guild_id):
         data["settings"] = {}
     return data
 
-def load_all_exports():
-    """Lädt alle Export-Dateien ins shared_info dict"""
-    for filename in os.listdir(EXPORTS_PATH):
-        if filename.endswith("-export.json"):
-            guild_id = filename.split("-")[0]
-            shared_info.serverExports[guild_id] = get_export(guild_id)
+async def load_all_exports_async():
+    for guild_id in os.listdir(EXPORTS_PATH):
+        path = os.path.join(EXPORTS_PATH, guild_id)
+        async with aiofiles.open(path, "r") as f:
+            data = await f.read()
+            shared_info.serverExports[guild_id] = json.loads(data)
+
 
 # ----------------------------------------------------------------------
 # Export Loader
@@ -252,12 +253,6 @@ async def periodic_dropbox_refresh(interval_hours=3):
         await refresh_all_dropbox_links()
         await asyncio.sleep(interval_hours * 3600)
 
-@bot.event
-async def on_ready():
-    load_all_exports()
-    print(f"{bot.user} is online and all exports loaded.")
-    asyncio.create_task(refresh_all_dropbox_links())
-    asyncio.create_task(periodic_dropbox_refresh())
 
 
 
