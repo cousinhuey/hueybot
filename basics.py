@@ -32,7 +32,7 @@ os.makedirs(EXPORTS_PATH, exist_ok=True)
 # ----------------------------------------------------------------------
 CLIENT_ID = "bwmbvhvhg74009d"
 CLIENT_SECRET = "gfpqqt6ncmm73e1"
-REFRESH_TOKEN = "-hX7Funk8a8AAAAAAAAAAQsbBJba5vOXQiGLiI1S6AFAdhRvgsX0dBvLN4D98K58"
+REFRESH_TOKEN = "UIIbxxU4hfMAAAAAAAAAAQjqHSamFSIJHlQvUuHBjv4Jkk5WC_o27upWYId93ooq"
 DROPBOX_TOKEN_URL = "https://api.dropbox.com/oauth2/token"
 
 def get_access_token():
