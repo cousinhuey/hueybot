@@ -128,7 +128,7 @@ def get_export(guild_id):
         data["settings"] = {}
     return data
 
-async def load_all_exports_async():
+async def load_all_exports():
     for guild_id in os.listdir(EXPORTS_PATH):
         path = os.path.join(EXPORTS_PATH, guild_id)
         async with aiofiles.open(path, "r") as f:
