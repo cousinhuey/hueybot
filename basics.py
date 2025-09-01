@@ -19,15 +19,63 @@ import time
 
 bot = shared_info.bot
 
+
 # ----------------------------------------------------------------------
-# Basis-Verzeichnis für Railway Volume
+# Railway Volume Setup
 # ----------------------------------------------------------------------
 VOLUME_PATH = "/mnt/data"
 EXPORTS_PATH = os.path.join(VOLUME_PATH, "exports")
 os.makedirs(EXPORTS_PATH, exist_ok=True)
 
 # ----------------------------------------------------------------------
-# DB Funktionen
+# Dropbox Access
+# ----------------------------------------------------------------------
+CLIENT_ID = "bwmbvhvhg74009d"
+CLIENT_SECRET = "gfpqqt6ncmm73e1"
+REFRESH_TOKEN = "-hX7Funk8a8AAAAAAAAAAQsbBJba5vOXQiGLiI1S6AFAdhRvgsX0dBvLN4D98K58"
+DROPBOX_TOKEN_URL = "https://api.dropbox.com/oauth2/token"
+
+def get_access_token():
+    data = {
+        "grant_type": "refresh_token",
+        "refresh_token": REFRESH_TOKEN,
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+    }
+    r = requests.post(DROPBOX_TOKEN_URL, data=data)
+    r.raise_for_status()
+    token_data = r.json()
+    return token_data["access_token"]
+
+def upload_to_dropbox(path_to_file, dest_path):
+    access_token = get_access_token()
+    dbx = dropbox.Dropbox(access_token)
+
+    # Datei ggf. löschen, wenn schon vorhanden
+    try:
+        dbx.files_get_metadata(dest_path)
+        dbx.files_delete_v2(dest_path)
+    except dropbox.exceptions.ApiError:
+        pass
+
+    with open(path_to_file, "rb") as f:
+        dbx.files_upload(f.read(), dest_path)
+
+    # Sharing-Link erstellen
+    try:
+        link_meta = dbx.sharing_create_shared_link_with_settings(dest_path)
+        url = link_meta.url
+    except dropbox.exceptions.ApiError as e:
+        if (
+            isinstance(e.error, dropbox.sharing.CreateSharedLinkWithSettingsError)
+            and e.error.is_shared_link_already_exists()
+        ):
+            links = dbx.sharing_list_shared_links(path=dest_path).links
+            url = links[0].url if links else None
+    return url
+
+# ----------------------------------------------------------------------
+# DB + JSON Helpers
 # ----------------------------------------------------------------------
 def clean_priorities(db):
     for n, s in db.items():
@@ -59,9 +107,6 @@ def load_db(name="servers.json"):
     with open(file_path) as f:
         return json.load(f)
 
-# ----------------------------------------------------------------------
-# Exports
-# ----------------------------------------------------------------------
 async def load_json_or_gzip(file_path):
     async with aiofiles.open(file_path, "rb") as f:
         raw_data = await f.read()
@@ -70,6 +115,9 @@ async def load_json_or_gzip(file_path):
         return json.loads(decompressed.decode("utf-8"))
     return json.loads(raw_data.decode("utf-8"))
 
+# ----------------------------------------------------------------------
+# Exports
+# ----------------------------------------------------------------------
 def get_export(guild_id):
     path = os.path.join(EXPORTS_PATH, f"{guild_id}-export.json")
     if not os.path.exists(path):
@@ -91,12 +139,10 @@ async def load_export_content(text, message):
     if len(text) == 1:
         await message.channel.send("Please provide an export URL.")
         return
-
     url = text[1]
     if not url.startswith("http"):
         await message.channel.send("Invalid link.")
         return
-
     await message.channel.send("Loading export...")
 
     try:
@@ -112,7 +158,6 @@ async def load_export_content(text, message):
 
         shared_info.serverExports[str(message.guild.id)] = await load_json_or_gzip(path)
 
-        # Exports sind jetzt persistent im Volume
         players = shared_info.serverExports[str(message.guild.id)].get("players", [])
         for p in players:
             p["stats"].sort(key=lambda s: s["season"])
@@ -123,24 +168,45 @@ async def load_export_content(text, message):
     except Exception as e:
         print(f"❌ Error loading export: {e}")
         await message.channel.send(
-            "There was an error loading that file. Ensure it's a valid JSON or gzipped JSON, or try another link."
+            "There was an error loading that file. Ensure it's valid JSON or gzipped JSON."
         )
 
 async def load_export(text, message):
     await asyncio.create_task(load_export_content(text, message))
 
+# ----------------------------------------------------------------------
+# Update Export (persistent + Dropbox-Link)
+# ----------------------------------------------------------------------
 async def update_export_content(message):
-    """Export im Railway Volume speichern"""
+    """Speichert Export im Volume und gibt Dropbox-Link zurück"""
     path_to_file = os.path.join(EXPORTS_PATH, f"{message.guild.id}-export.json")
     if not os.path.exists(path_to_file):
         await message.channel.send("⚠️ No export file found for this server.")
         return
-    await message.channel.send("Export saved to Railway Volume successfully!")
+
+    await message.channel.send("Saving export to Railway Volume...")
+    # Datei ist bereits im Volume, also nur info
+    await asyncio.sleep(0.1)  # kurz warten, sicherstellen dass alles geschrieben wurde
+
+    # Upload zu Dropbox
+    await message.channel.send("Uploading export to Dropbox...")
+    loop = asyncio.get_event_loop()
+    url = await loop.run_in_executor(
+        None,
+        upload_to_dropbox,
+        path_to_file,
+        f"/exports/{message.guild.id}-export.json"
+    )
+    if url:
+        text = "**Your Dropbox link:** " + url.replace("www.", "dl.")
+        await message.channel.send(text)
+    else:
+        await message.channel.send("❌ Failed to create Dropbox link.")
 
 async def update_export(text, message):
     if message.content.startswith("-updateexport"):
         await message.channel.send(
-            "⚠️ WARNING: The call '-updateexport' is deprecated. Use '-update' instead."
+            "⚠️ WARNING: '-updateexport' is deprecated. Use '-update' instead."
         )
     if message.content.startswith("-update") or message.content.startswith("-updateexport"):
         await asyncio.create_task(update_export_content(message))
