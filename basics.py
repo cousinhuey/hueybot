@@ -6,19 +6,12 @@ import asyncio
 import aiohttp
 import aiofiles
 import gzip
-from unidecode import unidecode
-from difflib import SequenceMatcher
-import random
-import discord
-import copy
-import shared_info
 import shutil
-import storage 
+import shared_info
+import discord
 import time
 
-
 bot = shared_info.bot
-
 
 # ----------------------------------------------------------------------
 # Railway Volume Setup
@@ -67,8 +60,7 @@ def upload_to_dropbox(path_to_file, dest_path):
     try:
         link_meta = dbx.sharing_create_shared_link_with_settings(dest_path)
         url = link_meta.url
-    except dropbox.exceptions.ApiError as e:
-        # Prüfen, ob Link schon existiert (falls in seltenen Fällen)
+    except dropbox.exceptions.ApiError:
         try:
             links = dbx.sharing_list_shared_links(path=dest_path).links
             if links:
@@ -136,6 +128,13 @@ def get_export(guild_id):
         data["settings"] = {}
     return data
 
+def load_all_exports():
+    """Lädt alle Export-Dateien ins shared_info dict"""
+    for filename in os.listdir(EXPORTS_PATH):
+        if filename.endswith("-export.json"):
+            guild_id = filename.split("-")[0]
+            shared_info.serverExports[guild_id] = get_export(guild_id)
+
 # ----------------------------------------------------------------------
 # Export Loader
 # ----------------------------------------------------------------------
@@ -182,17 +181,14 @@ async def load_export(text, message):
 # Update Export (persistent + Dropbox-Link)
 # ----------------------------------------------------------------------
 async def update_export_content(message):
-    """Speichert Export im Volume und gibt Dropbox-Link zurück"""
     path_to_file = os.path.join(EXPORTS_PATH, f"{message.guild.id}-export.json")
     if not os.path.exists(path_to_file):
         await message.channel.send("⚠️ No export file found for this server.")
         return
 
     await message.channel.send("Saving export to Railway Volume...")
-    # Datei ist bereits im Volume, also nur info
-    await asyncio.sleep(0.1)  # kurz warten, sicherstellen dass alles geschrieben wurde
+    await asyncio.sleep(0.1)
 
-    # Upload zu Dropbox
     await message.channel.send("Uploading export to Dropbox...")
     loop = asyncio.get_event_loop()
     url = await loop.run_in_executor(
@@ -202,7 +198,8 @@ async def update_export_content(message):
         f"/exports/{message.guild.id}-export.json"
     )
     if url:
-        text = "**Your Dropbox link:** " + url.replace("www.", "dl.")
+        shared_info.serverExports[str(message.guild.id)]["dropbox_link"] = url.replace("www.", "dl.")
+        text = "**Your Dropbox link:** " + shared_info.serverExports[str(message.guild.id)]["dropbox_link"]
         await message.channel.send(text)
     else:
         await message.channel.send("❌ Failed to create Dropbox link.")
@@ -214,6 +211,54 @@ async def update_export(text, message):
         )
     if message.content.startswith("-update") or message.content.startswith("-updateexport"):
         await asyncio.create_task(update_export_content(message))
+
+# ----------------------------------------------------------------------
+# Automatisches Prüfen & Aktualisieren der Dropbox-Links
+# ----------------------------------------------------------------------
+async def refresh_all_dropbox_links():
+    """Prüft alle lokalen Exports und lädt sie bei Bedarf erneut hoch."""
+    for guild_id, export_data in shared_info.serverExports.items():
+        path_to_file = os.path.join(EXPORTS_PATH, f"{guild_id}-export.json")
+        if not os.path.exists(path_to_file):
+            print(f"⚠️ No local export for guild {guild_id}, skipping Dropbox refresh.")
+            continue
+
+        # Prüfen, ob Dropbox-Link existiert
+        link = export_data.get("dropbox_link")
+        if link:
+            print(f"✅ Dropbox link exists for guild {guild_id}, skipping upload.")
+            continue
+
+        print(f"🔄 Refreshing Dropbox link for guild {guild_id}...")
+        loop = asyncio.get_event_loop()
+        try:
+            url = await loop.run_in_executor(
+                None,
+                upload_to_dropbox,
+                path_to_file,
+                f"/exports/{guild_id}-export.json"
+            )
+            if url:
+                shared_info.serverExports[guild_id]["dropbox_link"] = url.replace("www.", "dl.")
+                print(f"✅ Updated Dropbox link for guild {guild_id}: {shared_info.serverExports[guild_id]['dropbox_link']}")
+            else:
+                print(f"❌ Failed to create Dropbox link for guild {guild_id}")
+        except Exception as e:
+            print(f"❌ Exception during Dropbox refresh for guild {guild_id}: {e}")
+
+async def periodic_dropbox_refresh(interval_hours=3):
+    """Erneuert Dropbox-Links alle x Stunden."""
+    while True:
+        await refresh_all_dropbox_links()
+        await asyncio.sleep(interval_hours * 3600)
+
+@bot.event
+async def on_ready():
+    load_all_exports()
+    print(f"{bot.user} is online and all exports loaded.")
+    asyncio.create_task(refresh_all_dropbox_links())
+    asyncio.create_task(periodic_dropbox_refresh())
+
 
 
 # ----------------------------------------------------------------------
