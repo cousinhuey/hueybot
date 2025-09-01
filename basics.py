@@ -19,112 +19,16 @@ import time
 
 bot = shared_info.bot
 
-
+# ----------------------------------------------------------------------
+# Basis-Verzeichnis für Railway Volume
+# ----------------------------------------------------------------------
 VOLUME_PATH = "/mnt/data"
 EXPORTS_PATH = os.path.join(VOLUME_PATH, "exports")
 os.makedirs(EXPORTS_PATH, exist_ok=True)
 
-# Sicherstellen, dass die DB-Datei existiert
-servers_json_path = os.path.join(VOLUME_PATH, "servers.json")
-if not os.path.exists(servers_json_path):
-    with open(servers_json_path, "w") as f:
-        f.write("{}")  # leeres JSON initialisieren
-
 # ----------------------------------------------------------------------
-# Dropbox OAuth Konfiguration
+# DB Funktionen
 # ----------------------------------------------------------------------
-REFRESH_TOKEN = "-hX7Funk8a8AAAAAAAAAAQsbBJba5vOXQiGLiI1S6AFAdhRvgsX0dBvLN4D98K58"
-CLIENT_ID = "bwmbvhvhg74009d"
-CLIENT_SECRET = "gfpqqt6ncmm73e1"
-DROPBOX_TOKEN_URL = "https://api.dropbox.com/oauth2/token"
-
-_cached_token = None
-_token_expiry = 0
-
-def get_access_token():
-    """Holt automatisch ein frisches Access Token, nutzt Cache wenn gültig"""
-    global _cached_token, _token_expiry
-    if _cached_token and time.time() < _token_expiry - 60:
-        return _cached_token
-
-    data = {
-        "grant_type": "refresh_token",
-        "refresh_token": REFRESH_TOKEN,
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-    }
-    r = requests.post(DROPBOX_TOKEN_URL, data=data)
-    r.raise_for_status()
-    token_data = r.json()
-    _cached_token = token_data["access_token"]
-    _token_expiry = time.time() + token_data.get("expires_in", 14400)  # default 4h
-    return _cached_token
-
-# ----------------------------------------------------------------------
-# Dropbox Upload
-# ----------------------------------------------------------------------
-def upload_to_dropbox(path_to_file, dest_path):
-    """Lädt eine Datei zu Dropbox hoch und gibt die Sharing-URL zurück"""
-    CHUNK_SIZE = 4 * 1024 * 1024
-    access_token = get_access_token()
-    dbx = dropbox.Dropbox(access_token)
-
-    # Falls Datei schon existiert -> löschen
-    try:
-        dbx.files_get_metadata(dest_path)
-        dbx.files_delete_v2(dest_path)
-    except dropbox.exceptions.ApiError:
-        pass
-
-    with open(path_to_file, "rb") as f:
-        file_size = os.path.getsize(path_to_file)
-        if file_size <= CHUNK_SIZE:
-            dbx.files_upload(f.read(), dest_path)
-        else:
-            upload_session_start_result = dbx.files_upload_session_start(f.read(CHUNK_SIZE))
-            session_id = upload_session_start_result.session_id
-            offset = CHUNK_SIZE
-            while offset < file_size:
-                if file_size - offset <= CHUNK_SIZE:
-                    dbx.files_upload_session_finish(
-                        f.read(CHUNK_SIZE),
-                        dropbox.files.UploadSessionCursor(session_id=session_id, offset=offset),
-                        dropbox.files.CommitInfo(path=dest_path),
-                    )
-                else:
-                    dbx.files_upload_session_append_v2(
-                        f.read(CHUNK_SIZE),
-                        dropbox.files.UploadSessionCursor(session_id=session_id, offset=offset),
-                    )
-                offset += CHUNK_SIZE
-
-    # Sharing-Link erstellen oder bestehenden zurückgeben
-    try:
-        shared_link_metadata = dbx.sharing_create_shared_link_with_settings(dest_path)
-        url = shared_link_metadata.url
-    except dropbox.exceptions.ApiError as e:
-        if isinstance(e.error, dropbox.sharing.CreateSharedLinkWithSettingsError) and e.error.is_shared_link_already_exists():
-            links = dbx.sharing_list_shared_links(path=dest_path).links
-            if links:
-                url = links[0].url
-    return url
-
-# ----------------------------------------------------------------------
-# JSON + DB Helpers
-# ----------------------------------------------------------------------
-async def load_json_or_gzip(file_path):
-    async with aiofiles.open(file_path, "rb") as f:
-        raw_data = await f.read()
-    try:
-        if raw_data[:2] == b"\x1f\x8b":  # gzip Header
-            decompressed_data = gzip.decompress(raw_data)
-            return json.loads(decompressed_data.decode("utf-8"))
-        else:
-            return json.loads(raw_data.decode("utf-8"))
-    except Exception as e:
-        print(f"❌ Fehler beim Laden von {file_path}: {e}")
-        raise
-
 def clean_priorities(db):
     for n, s in db.items():
         offers = sorted(s["offers"], key=lambda o: o["priority"])
@@ -137,9 +41,6 @@ def clean_priorities(db):
                     pri += 1
     return db
 
-# ----------------------------------------------------------------------
-# DB Funktionen (Railway Volume)
-# ----------------------------------------------------------------------
 async def save_db_content(db, name="servers.json"):
     if name == "servers.json":
         db = clean_priorities(db)
@@ -148,35 +49,35 @@ async def save_db_content(db, name="servers.json"):
         await f.write(json.dumps(db))
 
 async def save_db(db, name="servers.json"):
-    file_path = os.path.join(VOLUME_PATH, name)
-    backup_path = os.path.join(VOLUME_PATH, "serversb.json")
-
-    # Backup nur erstellen, wenn Original existiert
-    if os.path.exists(file_path):
-        shutil.copy(file_path, backup_path)
-        print(f"🗂️ Backup erstellt: {backup_path}")
-
+    if name == "servers.json":
+        backup_path = os.path.join(VOLUME_PATH, "serversb.json")
+        shutil.copy(os.path.join(VOLUME_PATH, "servers.json"), backup_path)
     await asyncio.create_task(save_db_content(db, name))
 
 def load_db(name="servers.json"):
     file_path = os.path.join(VOLUME_PATH, name)
     with open(file_path) as f:
-        db = json.load(f)
-    return db
+        return json.load(f)
 
 # ----------------------------------------------------------------------
-# Exports (Railway Volume)
+# Exports
 # ----------------------------------------------------------------------
+async def load_json_or_gzip(file_path):
+    async with aiofiles.open(file_path, "rb") as f:
+        raw_data = await f.read()
+    if raw_data[:2] == b"\x1f\x8b":
+        decompressed = gzip.decompress(raw_data)
+        return json.loads(decompressed.decode("utf-8"))
+    return json.loads(raw_data.decode("utf-8"))
+
 def get_export(guild_id):
     path = os.path.join(EXPORTS_PATH, f"{guild_id}-export.json")
     if not os.path.exists(path):
         return {"settings": {}}
-
     with open(path, "rb") as f:
         raw_data = f.read()
     if raw_data[:2] == b"\x1f\x8b":
-        decompressed_data = gzip.decompress(raw_data)
-        data = json.loads(decompressed_data.decode("utf-8"))
+        data = json.loads(gzip.decompress(raw_data).decode("utf-8"))
     else:
         data = json.loads(raw_data.decode("utf-8"))
     if "settings" not in data:
@@ -200,7 +101,6 @@ async def load_export_content(text, message):
 
     try:
         path = os.path.join(EXPORTS_PATH, f"{message.guild.id}-export.json")
-
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 async with aiofiles.open(path, "wb") as f:
@@ -210,16 +110,9 @@ async def load_export_content(text, message):
                             break
                         await f.write(chunk)
 
-        # Export in shared_info laden
         shared_info.serverExports[str(message.guild.id)] = await load_json_or_gzip(path)
 
-        # ✅ Export zusätzlich persistent speichern (async)
-        await storage.save_export(
-            str(message.guild.id),
-            shared_info.serverExports[str(message.guild.id)]
-        )
-
-        # Spieler-Daten sortieren
+        # Exports sind jetzt persistent im Volume
         players = shared_info.serverExports[str(message.guild.id)].get("players", [])
         for p in players:
             p["stats"].sort(key=lambda s: s["season"])
@@ -232,28 +125,25 @@ async def load_export_content(text, message):
         await message.channel.send(
             "There was an error loading that file. Ensure it's a valid JSON or gzipped JSON, or try another link."
         )
-        
+
 async def load_export(text, message):
     await asyncio.create_task(load_export_content(text, message))
 
-# ----------------------------------------------------------------------
-# Export hochladen (Dropbox)
-# ----------------------------------------------------------------------
 async def update_export_content(message):
-    await message.channel.send("Uploading your export to Dropbox...")
+    """Export im Railway Volume speichern"""
     path_to_file = os.path.join(EXPORTS_PATH, f"{message.guild.id}-export.json")
     if not os.path.exists(path_to_file):
         await message.channel.send("⚠️ No export file found for this server.")
         return
-    loop = asyncio.get_event_loop()
-    url = await loop.run_in_executor(None, upload_to_dropbox, path_to_file, f"/exports/{message.guild.id}-export.json")
-    await message.channel.send("**Your Dropbox link:** " + url.replace("www.", "dl."))
+    await message.channel.send("Export saved to Railway Volume successfully!")
 
 async def update_export(text, message):
     if message.content.startswith("-updateexport"):
-        await message.channel.send("⚠️ WARNING: The call '-updateexport' is deprecated. Use '-update' instead.")
+        await message.channel.send(
+            "⚠️ WARNING: The call '-updateexport' is deprecated. Use '-update' instead."
+        )
     if message.content.startswith("-update") or message.content.startswith("-updateexport"):
-        asyncio.create_task(update_export_content(message))
+        await asyncio.create_task(update_export_content(message))
 
 
 # ----------------------------------------------------------------------
