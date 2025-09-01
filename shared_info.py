@@ -1,9 +1,18 @@
 import json
 import random
 import os
-import atexit   # <-- wichtig für Autosave beim Shutdown
+import atexit
 from datetime import datetime
+import discord
+from discord.ext import commands
 
+# ----------------- Bot Setup -----------------
+intents = discord.Intents.default()
+intents.message_content = True  # für on_message notwendig
+
+bot = commands.Bot(command_prefix='-', intents=intents)
+
+# ----------------- Commands & Aliases -----------------
 commandsRaw = {}
 commandAliases = {
     "r": "ratings",
@@ -33,8 +42,6 @@ commandAliases = {
     'bottom': 'top'
 }
 
-iscrowded = False
-
 modOnlyCommands = [
     'addrating', 'removetradepen', 'addredirect', 'removeredirect',
     'removereleasedplayer', 'clearalloffers', 'edit', 'load', 'addgm',
@@ -43,6 +50,7 @@ modOnlyCommands = [
     'addaward', 'removeaward'
 ]
 
+# ----------------- Persistent Data -----------------
 curdate = datetime.today().strftime('%Y-%m-%d')
 
 with open('servers.json') as f:
@@ -63,11 +71,9 @@ EXPORTS_FILE = os.path.join("exports", "server_exports.json")
 serverExports = {}
 
 def ensure_exports_dir():
-    """Make sure the exports folder exists."""
     os.makedirs("exports", exist_ok=True)
 
 def load_exports():
-    """Load saved exports from disk."""
     global serverExports
     ensure_exports_dir()
     if os.path.exists(EXPORTS_FILE):
@@ -82,7 +88,6 @@ def load_exports():
         serverExports = {}
 
 def save_exports():
-    """Save current exports to disk."""
     try:
         ensure_exports_dir()
         with open(EXPORTS_FILE, "w", encoding="utf-8") as f:
@@ -96,23 +101,19 @@ load_exports()
 
 # Auto-save on shutdown
 atexit.register(save_exports)
-# -----------------------------------
 
+# ----------------- Other Data -----------------
 trivias = dict()
 triviabl = dict()
-
-bot = None
 
 def getadjective():
     adjlist = [
         'merrily','blissfully','stupidly','gladly','lazily','resignedly',
-        'reluctantly','calmly','smartly','affectionately','casually',
-        'haphazardly','accidentally','hastily','excitedly','normally',
-        'wishfully','hesitantly','sorrowfully','allegedly'
+        'reluctantly','calmly','smartly','affectionately','casually','haphazardly',
+        'accidentally','hastily','excitedly','normally','wishfully','hesitantly',
+        'sorrowfully','allegedly'
     ]
-    adjlist += [
-        'opportunistically','strategically','carefully','boldly','rashly','shrewdly'
-    ]
+    adjlist += ['opportunistically','strategically','carefully','boldly','rashly','shrewdly']
     return random.sample(adjlist, 1)[0]
 
 embedFooter = 'Coded by ClevelandFan#2909 - Redistributed by Huey'
